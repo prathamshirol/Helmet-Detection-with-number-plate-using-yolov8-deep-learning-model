@@ -1,3 +1,101 @@
+# --- Mount Google Drive ---
+from google.colab import drive
+drive.mount('/content/drive')
+
+# --- Install dependencies ---
+!pip install ultralytics pytesseract
+!sudo apt-get install -y tesseract-ocr
+
+# --- Import libraries ---
+from ultralytics import YOLO
+import cv2
+import matplotlib.pyplot as plt
+import pytesseract
+
+# --- Load trained model (helmet + number plate) ---
+model = YOLO("/content/drive/MyDrive/helmet_numberplate/best.pt")  # <-- replace with your model path
+
+# --- Initialize a set to store unique number plates ---
+unique_plates = set()
+
+# --- Function to extract text from number plate image ---
+def extract_number_plate_text(plate_img):
+    gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+    text = pytesseract.image_to_string(gray, config='--psm 8')
+    text = ''.join(filter(str.isalnum, text))  # keep only letters/numbers
+    return text.upper()
+
+# --- Function to process image and detect violators ---
+def detect_violations(image_path):
+    img = cv2.imread(image_path)
+    results = model(img)[0]  # Run YOLOv8 model
+    
+    helmet_detected = False
+    person_detected = False
+    number_plate_region = None
+
+    # Iterate through detections
+    for box in results.boxes:
+        cls = int(box.cls[0])
+        conf = float(box.conf[0])
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+        label = model.names[cls]
+
+        # Draw bounding boxes
+        color = (0, 255, 0) if label == 'helmet' else (0, 0, 255)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(img, f"{label} {conf:.2f}", (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+        # Check detections
+        if label.lower() == "helmet":
+            helmet_detected = True
+        elif label.lower() == "person":
+            person_detected = True
+        elif label.lower() == "number plate":
+            number_plate_region = img[y1:y2, x1:x2]
+
+    # If person detected without helmet
+    if person_detected and not helmet_detected and number_plate_region is not None:
+        plate_text = extract_number_plate_text(number_plate_region)
+        if plate_text:
+            unique_plates.add(plate_text)
+            print(f"Violation detected! Number Plate: {plate_text}")
+        else:
+            print("Violation detected, but number plate unreadable.")
+    else:
+        print("No violation detected.")
+
+    # Display annotated image
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    plt.imshow(img_rgb)
+    plt.axis('off')
+    plt.show()
+
+# --- Example usage ---
+detect_violations("/content/drive/MyDrive/helmet_numberplate/test_img.jpg")
+
+# --- Print all unique violator plates ---
+print("Unique Violator Number Plates:")
+for plate in unique_plates:
+    print(plate)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -*- coding: utf-8 -*-
 """helmet (1) (1).ipynb
 
